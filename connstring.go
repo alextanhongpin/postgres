@@ -7,27 +7,22 @@ import (
 	"strings"
 )
 
-type Config struct {
-	Host     string `envconfig:"DB_HOST" default:"127.0.0.1"`
-	Port     int    `envconfig:"DB_PORT" default:"5432"`
-	User     string `envconfig:"DB_USER" default:"john"`
-	Password string `envconfig:"DB_PASS" default:"123456"`
-	Database string `envconfig:"DB_NAME" default:"development"`
-	SSLMode  SSLMode
+type ConnString struct {
+	Host     string
+	Port     int
+	User     string
+	Password string
+	Database string
+	Params   map[string]string
 }
 
-func (c Config) sslmode() string {
-	if c.SSLMode == "" {
-		return fmt.Sprintf("sslmode=%s", SSLModeDisable)
+func (c ConnString) String() string {
+	var params []string
+	if _, ok := c.Params["sslmode"]; !ok {
+		params = append(params, "sslmode=disable")
 	}
-	return fmt.Sprintf("sslmode=%s", c.SSLMode)
-}
-
-func (c Config) String(args ...string) string {
-	if len(args) > 0 {
-		args = append(args, c.sslmode())
-	} else {
-		args = []string{c.sslmode()}
+	for k, v := range c.Params {
+		params = append(params, fmt.Sprintf("%v=%v", k, v))
 	}
 
 	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?%s",
@@ -36,12 +31,12 @@ func (c Config) String(args ...string) string {
 		c.Host,
 		c.Port,
 		c.Database,
-		strings.Join(args, "&"),
+		strings.Join(params, "&"),
 	)
 }
 
-func NewConfig() (*Config, error) {
-	var cfg Config
+func NewConnString() (*ConnString, error) {
+	var cfg ConnString
 	var err error
 	cfg.Port, err = parseEnvInt("DB_PORT")
 	if err != nil {

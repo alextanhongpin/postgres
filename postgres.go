@@ -5,22 +5,24 @@ import (
 	"log"
 	"time"
 
+	_ "github.com/lib/pq"
+
 	"github.com/gobuffalo/packr/v2"
 	migrate "github.com/rubenv/sql-migrate"
 )
 
-// New returns a new DB from the config.
-func New(cfg *Config, opts ...Options) (*sql.DB, error) {
-	db, err := sql.Open("postgres", cfg.String())
+func New(connString string, opts ...OptionModifier) (*sql.DB, error) {
+	db, err := sql.Open("postgres", connString)
 	if err != nil {
 		return nil, err
 	}
 
 	opt := Option{
-		MaxOpenConns:    25,
-		MaxIdleConns:    25,
-		ConnMaxLifetime: 5 * time.Minute,
-		Ping:            6,
+		MaxOpenConns:        25,
+		MaxIdleConns:        25,
+		ConnMaxLifetime:     5 * time.Minute,
+		Ping:                6,
+		MigrationsTableName: "migrations",
 	}
 
 	for _, modify := range opts {
@@ -33,8 +35,9 @@ func New(cfg *Config, opts ...Options) (*sql.DB, error) {
 		}
 	}
 
-	if opt.MigratePath != "" && opt.MigrateTableName != "" {
-		if err := makeMigrate(db, opt.MigratePath, opt.MigrateTableName); err != nil {
+	migrate.SetTable(opt.MigrationsTableName)
+	if opt.MigrationsSource != "" {
+		if err := makeMigrate(db, opt.MigrationsSource); err != nil {
 			return nil, err
 		}
 	}
@@ -60,11 +63,9 @@ func ping(db *sql.DB, retry int) error {
 	return err
 }
 
-func makeMigrate(db *sql.DB, path, tableName string) error {
-	migrate.SetTable(tableName)
-
+func makeMigrate(db *sql.DB, src string) error {
 	migrations := &migrate.PackrMigrationSource{
-		Box: packr.New("migrations", path),
+		Box: packr.New("migrations", src),
 	}
 
 	n, err := migrate.Exec(db, "postgres", migrations, migrate.Up)
