@@ -2,12 +2,12 @@ package postgres
 
 import "fmt"
 
-// DockerImage struct.
-type DockerImage struct {
-	Container string
-	Version   string
+// Container struct.
+type Container struct {
+	Image   string
+	Version string
 }
 
-func (d DockerImage) String() string {
-	return fmt.Sprintf("%s:%s", d.Container, d.Version)
+func (c Container) String() string {
+	return fmt.Sprintf("%s:%s", c.Image, c.Version)
 }

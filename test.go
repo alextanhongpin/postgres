@@ -11,50 +11,64 @@ import (
 	"github.com/ory/dockertest/v3"
 )
 
+const (
+	testContainerImage   = Postgres
+	testContainerVersion = "13.1-alpine"
+
+	testHost     = "localhost"
+	testPort     = 5432
+	testUser     = "root"
+	testPassword = "password"
+	testDatabase = "test"
+)
+
 // NewTestDB returns a new test db with a unique connection string.
 func NewTestDB() (*sql.DB, error) {
 	return sql.Open("txdb", fmt.Sprintf("tx-%d", time.Now().UnixNano()))
 }
 
-type TestOption struct {
-	DockerImage      DockerImage
+type TestOptions struct {
+	Container        Container
 	MigrationsSource string
 	ConnString       *ConnString
 }
 
-type TestOptionModifier func(*TestOption)
+type TestOption func(*TestOptions)
 
-func WithDockerImage(di DockerImage) TestOptionModifier {
-	return func(opt *TestOption) {
-		opt.DockerImage = di
+// WithContainer overrides the current container.
+func WithContainer(ctn Container) TestOption {
+	return func(opt *TestOptions) {
+		opt.Container = ctn
 	}
 }
 
-func WithConnString(cs *ConnString) TestOptionModifier {
-	return func(opt *TestOption) {
+// WithConnString sets the test connection string.
+func WithConnString(cs *ConnString) TestOption {
+	return func(opt *TestOptions) {
 		opt.ConnString = cs
 	}
 }
 
-func WithTestMigrationsSource(src string) TestOptionModifier {
-	return func(opt *TestOption) {
+// WithTestMigrationsSource sets the path to the migrations folder.
+func WithTestMigrationsSource(src string) TestOption {
+	return func(opt *TestOptions) {
 		opt.MigrationsSource = src
 	}
 }
 
-// SetupTestDB setups a dockertest postgres container.
-func SetupTestDB(opts ...TestOptionModifier) (*sql.DB, func()) {
-	opt := TestOption{
-		DockerImage: DockerImage{
-			Container: "postgres",
-			Version:   "13.1-alpine",
+// InitTestDB setups a dockertest postgres container.
+func InitTestDB(opts ...TestOption) (*sql.DB, func() error) {
+	opt := TestOptions{
+		Container: Container{
+			Image:   testContainerImage,
+			Version: testContainerVersion,
 		},
 		ConnString: &ConnString{
-			Host:     "localhost",
-			Port:     5432,
-			User:     "root",
-			Password: "password",
-			Database: "test",
+			Host:     testHost,
+			Port:     testPort,
+			User:     testUser,
+			Password: testPassword,
+			Database: testDatabase,
 		},
 	}
 
@@ -63,66 +77,70 @@ func SetupTestDB(opts ...TestOptionModifier) (*sql.DB, func()) {
 	}
 
 	var db *sql.DB
-	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
+	// Uses a sensible default on windows (tcp/http) and linux/osx (socket)
 	pool, err := dockertest.NewPool("")
 	if err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
+		log.Fatalf("connect docker failed: %s", err)
 	}
 
 	cs := opt.ConnString
-	cs.Host = "localhost"
+	cs.Host = testHost
 
-	// pulls an image, creates a container based on it and runs it
+	// Pulls an image, creates a container based on it and runs it
 	resource, err := pool.Run(
-		opt.DockerImage.Container,
-		opt.DockerImage.Version,
+		opt.Container.Image,
+		opt.Container.Version,
 		[]string{
 			fmt.Sprintf("POSTGRES_DB=%s", cs.Database),
 			fmt.Sprintf("POSTGRES_PASSWORD=%s", cs.Password),
 			fmt.Sprintf("POSTGRES_USER=%s", cs.User),
 		})
 	if err != nil {
-		log.Fatalf("Could not start resource: %s", err)
+		log.Fatalf("start docker failed: %s", err)
 	}
 
 	// Hard kill the container in 60 seconds.
 	_ = resource.Expire(60)
 
-	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
+	// Exponential backoff-retry, because the application in the container might
+	// not be ready to accept connections yet
 	if err := pool.Retry(func() error {
 		port, err := strconv.Atoi(resource.GetPort("5432/tcp"))
 		if err != nil {
 			return err
 		}
-		// Port changes dynamically.
+
+		// Assign dynamic port.
 		cs.Port = port
-		db, err = sql.Open("postgres", cs.String())
+		db, err = sql.Open(Postgres, cs.String())
 		if err != nil {
 			return err
 		}
 
 		return db.Ping()
 	}); err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
+		log.Fatalf("connect failed: %s", err)
 	}
 
 	// Perform migration.
 	if opt.MigrationsSource != "" {
 		if err := makeMigrate(db, opt.MigrationsSource); err != nil {
-			log.Fatalf("test migration failed: %v", err)
+			log.Fatalf("migration failed: %s", err)
 		}
 	}
 
-	txdb.Register("txdb", "postgres", cs.String())
+	txdb.Register("txdb", Postgres, cs.String())
 
-	return db, func() {
+	return db, func() error {
 		if err := db.Close(); err != nil {
-			log.Printf("Could not close db: %s", err)
+			return err
 		}
 
 		// You can't defer this because os.Exit doesn't care for defer
 		if err := pool.Purge(resource); err != nil {
-			log.Fatalf("Could not purge resource: %s", err)
+			return err
 		}
+
+		return nil
 	}
 }

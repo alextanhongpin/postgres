@@ -11,41 +11,58 @@ import (
 	migrate "github.com/rubenv/sql-migrate"
 )
 
-func New(connString string, opts ...OptionModifier) (*sql.DB, error) {
-	db, err := sql.Open("postgres", connString)
+const Postgres = "postgres"
+
+const (
+	// Migrations.
+	migrationsSource    = "migrations"
+	migrationsTableName = "migrations"
+
+	// Ping.
+	pingRetries = 6
+	pingTimeout = 10 * time.Second
+
+	// Connectivity.
+	maxOpenConns    = 25
+	maxIdleConns    = 25
+	connMaxLifetime = 5 * time.Minute
+)
+
+func New(connString string, options ...Option) (*sql.DB, error) {
+	db, err := sql.Open(Postgres, connString)
 	if err != nil {
 		return nil, err
 	}
 
-	opt := Option{
-		MaxOpenConns:        25,
-		MaxIdleConns:        25,
-		ConnMaxLifetime:     5 * time.Minute,
-		Ping:                6,
-		MigrationsTableName: "migrations",
+	opts := Options{
+		MaxOpenConns:        maxOpenConns,
+		MaxIdleConns:        maxIdleConns,
+		ConnMaxLifetime:     connMaxLifetime,
+		PingRetries:         pingRetries,
+		MigrationsTableName: migrationsTableName,
 	}
 
-	for _, modify := range opts {
-		modify(&opt)
+	for _, opt := range options {
+		opt(&opts)
 	}
 
-	if opt.Ping > 0 {
-		if err := ping(db, opt.Ping); err != nil {
+	if opts.PingRetries > 0 {
+		if err := ping(db, opts.PingRetries); err != nil {
 			return nil, err
 		}
 	}
 
-	migrate.SetTable(opt.MigrationsTableName)
-	if opt.MigrationsSource != "" {
-		if err := makeMigrate(db, opt.MigrationsSource); err != nil {
+	migrate.SetTable(opts.MigrationsTableName)
+	if opts.MigrationsSource != "" {
+		if err := makeMigrate(db, opts.MigrationsSource); err != nil {
 			return nil, err
 		}
 	}
 
 	// https://www.alexedwards.net/blog/configuring-sqldb
-	db.SetMaxOpenConns(opt.MaxOpenConns)
-	db.SetMaxIdleConns(opt.MaxIdleConns)
-	db.SetConnMaxLifetime(opt.ConnMaxLifetime)
+	db.SetMaxOpenConns(opts.MaxOpenConns)
+	db.SetMaxIdleConns(opts.MaxIdleConns)
+	db.SetConnMaxLifetime(opts.ConnMaxLifetime)
 
 	return db, nil
 }
@@ -54,24 +71,23 @@ func ping(db *sql.DB, retry int) error {
 	var err error
 	for i := 0; i < retry; i++ {
 		err = db.Ping()
-		if err != nil {
-			time.Sleep(10 * time.Second)
-			continue
+		if err == nil {
+			break
 		}
-		break
+		time.Sleep(pingTimeout)
 	}
 	return err
 }
 
 func makeMigrate(db *sql.DB, src string) error {
 	migrations := &migrate.PackrMigrationSource{
-		Box: packr.New("migrations", src),
+		Box: packr.New(migrationsSource, src),
 	}
 
-	n, err := migrate.Exec(db, "postgres", migrations, migrate.Up)
+	n, err := migrate.Exec(db, Postgres, migrations, migrate.Up)
 	if err != nil {
 		return err
 	}
-	log.Printf("[migration] Applied %d migrations\n", n)
+	log.Printf("migrations applied: %d\n", n)
 	return nil
 }
