@@ -15,7 +15,6 @@ const Postgres = "postgres"
 
 const (
 	// Migrations.
-	migrationsSource    = "migrations"
 	migrationsTableName = "migrations"
 
 	// Ping.
@@ -53,7 +52,7 @@ func New(connString string, options ...Option) (*sql.DB, error) {
 	}
 
 	migrate.SetTable(opts.MigrationsTableName)
-	if opts.MigrationsSource != "" {
+	if opts.MigrationsSource != nil {
 		if err := makeMigrate(db, opts.MigrationsSource); err != nil {
 			return nil, err
 		}
@@ -79,9 +78,9 @@ func ping(db *sql.DB, retry int) error {
 	return err
 }
 
-func makeMigrate(db *sql.DB, src string) error {
+func makeMigrate(db *sql.DB, box *packr.Box) error {
 	migrations := &migrate.PackrMigrationSource{
-		Box: packr.New(migrationsSource, src),
+		Box: box, // packr.New(migrationsSource, src),
 	}
 
 	n, err := migrate.Exec(db, Postgres, migrations, migrate.Up)

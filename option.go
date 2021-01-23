@@ -1,11 +1,15 @@
 package postgres
 
-import "time"
+import (
+	"time"
+
+	"github.com/gobuffalo/packr/v2"
+)
 
 // Options for postgres.
 type Options struct {
 	PingRetries         int
-	MigrationsSource    string
+	MigrationsSource    *packr.Box
 	MigrationsTableName string
 	MaxOpenConns        int
 	MaxIdleConns        int
@@ -25,9 +29,9 @@ func WithPing(n int) Option {
 
 // WithMigrationsSource defines the relative path to the folder
 // containing migrations, e.g. ./migrations.
-func WithMigrationsSource(src string) Option {
+func WithMigrationsSource(box *packr.Box) Option {
 	return func(opt *Options) {
-		opt.MigrationsSource = src
+		opt.MigrationsSource = box
 	}
 }
 
