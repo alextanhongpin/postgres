@@ -3,17 +3,18 @@ package postgres
 import (
 	"time"
 
-	"github.com/gobuffalo/packr/v2"
+	migrate "github.com/rubenv/sql-migrate"
 )
 
 // Options for postgres.
 type Options struct {
-	PingRetries         int
-	MigrationsSource    *packr.Box
-	MigrationsTableName string
-	MaxOpenConns        int
-	MaxIdleConns        int
+	ConnMaxIdleTime     time.Duration
 	ConnMaxLifetime     time.Duration
+	MaxIdleConns        int
+	MaxOpenConns        int
+	MigrationsSource    []migrate.MigrationSource
+	MigrationsTableName string
+	PingRetries         int
 }
 
 // Option modify the default Options.
@@ -29,9 +30,9 @@ func WithPing(n int) Option {
 
 // WithMigrationsSource defines the relative path to the folder
 // containing migrations, e.g. ./migrations.
-func WithMigrationsSource(box *packr.Box) Option {
+func WithMigrationsSource(source migrate.MigrationSource, rest ...migrate.MigrationSource) Option {
 	return func(opt *Options) {
-		opt.MigrationsSource = box
+		opt.MigrationsSource = append(opt.MigrationsSource, append([]migrate.MigrationSource{source}, rest...)...)
 	}
 }
 
@@ -57,10 +58,18 @@ func WithMaxIdleConns(n int) Option {
 	}
 }
 
-// WithConnMaxLifetime overrides the default ConnMaxLifetime of 5
-// minutes.
+// WithConnMaxLifetime overrides the default ConnMaxLifetime of 1
+// hour.
 func WithConnMaxLifetime(duration time.Duration) Option {
 	return func(opt *Options) {
 		opt.ConnMaxLifetime = duration
+	}
+}
+
+// WithConnMaxIdleTime overrides the default ConnMaxIdleTime of 5
+// minutes.
+func WithConnMaxIdleTime(duration time.Duration) Option {
+	return func(opt *Options) {
+		opt.ConnMaxIdleTime = duration
 	}
 }

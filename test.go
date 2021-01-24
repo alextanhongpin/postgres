@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-txdb"
-	"github.com/gobuffalo/packr/v2"
 	"github.com/ory/dockertest/v3"
+	migrate "github.com/rubenv/sql-migrate"
 )
 
 const (
@@ -29,9 +29,9 @@ func NewTestDB() (*sql.DB, error) {
 }
 
 type TestOptions struct {
-	Container        Container
-	MigrationsSource *packr.Box
 	ConnString       *ConnString
+	Container        Container
+	MigrationsSource []migrate.MigrationSource
 }
 
 type TestOption func(*TestOptions)
@@ -51,9 +51,9 @@ func WithConnString(cs *ConnString) TestOption {
 }
 
 // WithTestMigrationsSource sets the path to the migrations folder.
-func WithTestMigrationsSource(box *packr.Box) TestOption {
+func WithTestMigrationsSource(src migrate.MigrationSource, rest ...migrate.MigrationSource) TestOption {
 	return func(opt *TestOptions) {
-		opt.MigrationsSource = box
+		opt.MigrationsSource = append(opt.MigrationsSource, append([]migrate.MigrationSource{src}, rest...)...)
 	}
 }
 
@@ -124,8 +124,8 @@ func InitTestDB(opts ...TestOption) (*sql.DB, func() error) {
 	}
 
 	// Perform migration.
-	if opt.MigrationsSource != nil {
-		if err := makeMigrate(db, opt.MigrationsSource); err != nil {
+	for _, src := range opt.MigrationsSource {
+		if err := Migrate(db, src); err != nil {
 			log.Fatalf("migration failed: %s", err)
 		}
 	}

@@ -7,7 +7,6 @@ import (
 
 	_ "github.com/lib/pq"
 
-	"github.com/gobuffalo/packr/v2"
 	migrate "github.com/rubenv/sql-migrate"
 )
 
@@ -24,7 +23,8 @@ const (
 	// Connectivity.
 	maxOpenConns    = 25
 	maxIdleConns    = 25
-	connMaxLifetime = 5 * time.Minute
+	connMaxLifetime = 1 * time.Hour
+	connMaxIdleTime = 5 * time.Minute
 )
 
 func New(connString string, options ...Option) (*sql.DB, error) {
@@ -36,6 +36,7 @@ func New(connString string, options ...Option) (*sql.DB, error) {
 	opts := Options{
 		MaxOpenConns:        maxOpenConns,
 		MaxIdleConns:        maxIdleConns,
+		ConnMaxIdleTime:     connMaxIdleTime,
 		ConnMaxLifetime:     connMaxLifetime,
 		PingRetries:         pingRetries,
 		MigrationsTableName: migrationsTableName,
@@ -52,8 +53,8 @@ func New(connString string, options ...Option) (*sql.DB, error) {
 	}
 
 	migrate.SetTable(opts.MigrationsTableName)
-	if opts.MigrationsSource != nil {
-		if err := makeMigrate(db, opts.MigrationsSource); err != nil {
+	for _, src := range opts.MigrationsSource {
+		if err := Migrate(db, src); err != nil {
 			return nil, err
 		}
 	}
@@ -62,6 +63,7 @@ func New(connString string, options ...Option) (*sql.DB, error) {
 	db.SetMaxOpenConns(opts.MaxOpenConns)
 	db.SetMaxIdleConns(opts.MaxIdleConns)
 	db.SetConnMaxLifetime(opts.ConnMaxLifetime)
+	db.SetConnMaxIdleTime(opts.ConnMaxIdleTime)
 
 	return db, nil
 }
@@ -78,11 +80,7 @@ func ping(db *sql.DB, retry int) error {
 	return err
 }
 
-func makeMigrate(db *sql.DB, box *packr.Box) error {
-	migrations := &migrate.PackrMigrationSource{
-		Box: box, // packr.New(migrationsSource, src),
-	}
-
+func Migrate(db *sql.DB, migrations migrate.MigrationSource) error {
 	n, err := migrate.Exec(db, Postgres, migrations, migrate.Up)
 	if err != nil {
 		return err
