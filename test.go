@@ -88,14 +88,16 @@ func InitTestDB(opts ...TestOption) (*sql.DB, func() error) {
 	cs.Host = testHost
 
 	// Pulls an image, creates a container based on it and runs it
-	resource, err := pool.Run(
-		opt.Container.Image,
-		opt.Container.Version,
-		[]string{
+	resource, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: opt.Container.Image,
+		Tag:        opt.Container.Version,
+		Cmd:        []string{"-c", "fsync=off"},
+		Env: []string{
 			fmt.Sprintf("POSTGRES_DB=%s", cs.Database),
 			fmt.Sprintf("POSTGRES_PASSWORD=%s", cs.Password),
 			fmt.Sprintf("POSTGRES_USER=%s", cs.User),
-		})
+		},
+	})
 	if err != nil {
 		log.Fatalf("start docker failed: %s", err)
 	}
