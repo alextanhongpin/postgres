@@ -32,6 +32,7 @@ type TestOptions struct {
 	ConnString       *ConnString
 	Container        Container
 	MigrationsSource []migrate.MigrationSource
+	Callback         func(db *sql.DB, cs *ConnString) error
 }
 
 type TestOption func(*TestOptions)
@@ -54,6 +55,12 @@ func WithConnString(cs *ConnString) TestOption {
 func WithTestMigrationsSource(src migrate.MigrationSource, rest ...migrate.MigrationSource) TestOption {
 	return func(opt *TestOptions) {
 		opt.MigrationsSource = append(opt.MigrationsSource, append([]migrate.MigrationSource{src}, rest...)...)
+	}
+}
+
+func WithCallback(fn func(db *sql.DB, cs *ConnString) error) TestOption {
+	return func(opt *TestOptions) {
+		opt.Callback = fn
 	}
 }
 
@@ -129,6 +136,11 @@ func InitTestDB(opts ...TestOption) (*sql.DB, func() error) {
 	for _, src := range opt.MigrationsSource {
 		if err := Migrate(db, src); err != nil {
 			log.Fatalf("migration failed: %s", err)
+		}
+	}
+	if opt.Callback != nil {
+		if err := opt.Callback(db, cs); err != nil {
+			log.Fatalf("callback failed: %s", err)
 		}
 	}
 
